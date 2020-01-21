@@ -147,10 +147,10 @@
     "github.com/aws/aws-lambda-go/events",
     "github.com/aws/aws-lambda-go/lambda",
     "github.com/function61/gokit/envvar",
-    "github.com/function61/gokit/ezhttp",
     "github.com/function61/hautomo/pkg/constmetrics",
     "github.com/function61/prompipe/pkg/prompipeclient",
     "github.com/google/go-github/github",
+    "github.com/prometheus/client_golang/prometheus",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
