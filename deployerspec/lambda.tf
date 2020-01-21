@@ -1,8 +1,8 @@
 
 variable "region" { type = "string" }
 variable "PROMPIPE_ENDPOINT" { type = "string" }
-variable "PROMPIPE_ENDPOINT" { type = "string" }
 variable "PROMPIPE_AUTHTOKEN" { type = "string" }
+variable "GITHUB_ORG" { type = "string" }
 
 variable "zip_filename" { type = "string" }
 
