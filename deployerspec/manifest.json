@@ -1,0 +1,42 @@
+{
+  "manifest_version_major": 1,
+  "deployer_image": "fn61/infrastructureascode:20190521_1233_a7b52c5f",
+  "deploy_command": ["deploy-lambdafunc.sh", "lambdafunc.zip"],
+  "download_artefacts": [
+    "lambdafunc.zip"
+  ],
+  "download_artefact_urltemplate": "https://dl.bintray.com/joonas/dl/github2prometheus/{version}/{filename}",
+  "env_vars": [
+    {
+      "key": "TF_VAR_region",
+      "optional": false,
+      "placeholder": "us-east-1",
+      "help": "AWS region of your Lambda function"
+    },
+    {
+      "key": "TF_VAR_PROMPIPE_ENDPOINT",
+      "placeholder": "https://prompipe.example.com/metrics/github2prometheus/lambda",
+      "help": "Endpoint URL to prompipe"
+    },
+    {
+      "key": "TF_VAR_PROMPIPE_AUTHTOKEN"
+    },
+    {
+      "key": "TF_VAR_GITHUB_ORG",
+      "placeholder": "function61",
+    },
+    {
+      "key": "AWS_ACCESS_KEY_ID",
+      "optional": false,
+      "placeholder": "AKI..",
+      "help": ""
+    },
+    {
+      "key": "AWS_SECRET_ACCESS_KEY",
+      "optional": false,
+      "placeholder": "",
+      "help": ""
+    }
+  ],
+  "software_unique_id": "4186cc94-9e4d-4be6-a35e-1d021a26da0d"
+}
