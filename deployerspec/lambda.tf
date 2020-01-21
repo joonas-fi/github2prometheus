@@ -35,7 +35,7 @@ resource "aws_lambda_function" "fn" {
 resource "aws_cloudwatch_event_rule" "cw_scheduledevent_rule" {
 	name = "GitHub2Prometheus-schedule"
 	description = "Scheduled invocation for Lambda fn"
-	schedule_expression = "rate(1 hours)"
+	schedule_expression = "rate(1 hour)"
 }
 
 resource "aws_cloudwatch_event_target" "cwlambdatarget" {
