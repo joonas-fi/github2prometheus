@@ -26,6 +26,10 @@
       "placeholder": "function61"
     },
     {
+      "key": "TF_VAR_GITHUB_USER",
+      "placeholder": "joonas-fi"
+    },
+    {
       "key": "AWS_ACCESS_KEY_ID",
       "optional": false,
       "placeholder": "AKI..",

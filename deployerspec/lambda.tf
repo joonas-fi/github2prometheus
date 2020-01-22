@@ -3,6 +3,7 @@ variable "region" { type = "string" }
 variable "PROMPIPE_ENDPOINT" { type = "string" }
 variable "PROMPIPE_AUTHTOKEN" { type = "string" }
 variable "GITHUB_ORG" { type = "string" }
+variable "GITHUB_USER" { type = "string" }
 
 variable "zip_filename" { type = "string" }
 
@@ -28,6 +29,7 @@ resource "aws_lambda_function" "fn" {
 			PROMPIPE_ENDPOINT = "${var.PROMPIPE_ENDPOINT}"
 			PROMPIPE_AUTHTOKEN = "${var.PROMPIPE_AUTHTOKEN}"
       GITHUB_ORG = "${var.GITHUB_ORG}"
+      GITHUB_USER = "${var.GITHUB_USER}"
 		}
 	}
 }
