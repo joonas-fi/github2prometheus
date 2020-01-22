@@ -25,22 +25,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:2bc0c85110eca52cd8c554001fa892ba7459dc7d68b940375dce13b05f771a34"
+  digest = "1:042fad805886f50fa698ec8323c11d2527345458294505b1476bcc11348502a9"
   name = "github.com/function61/gokit"
   packages = [
     "envvar",
     "ezhttp",
+    "promconstmetrics",
   ]
   pruneopts = "UT"
-  revision = "2732e7941cb4b925f145f2910b6e84b5ad3fa323"
-
-[[projects]]
-  branch = "master"
-  digest = "1:f3f756d5bb73246532c7a8385bdf8b50b2e6be848b19b43d9775e041e9712763"
-  name = "github.com/function61/hautomo"
-  packages = ["pkg/constmetrics"]
-  pruneopts = "UT"
-  revision = "f14cc723699becbf2a4511cda160047b4f59cda5"
+  revision = "c2d99cc8b9622b1365b86d5579af307c329bf349"
 
 [[projects]]
   branch = "master"
@@ -147,7 +140,7 @@
     "github.com/aws/aws-lambda-go/events",
     "github.com/aws/aws-lambda-go/lambda",
     "github.com/function61/gokit/envvar",
-    "github.com/function61/hautomo/pkg/constmetrics",
+    "github.com/function61/gokit/promconstmetrics",
     "github.com/function61/prompipe/pkg/prompipeclient",
     "github.com/google/go-github/github",
     "github.com/prometheus/client_golang/prometheus",

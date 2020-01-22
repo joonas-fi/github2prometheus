@@ -1,84 +1,136 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/function61/gokit/envvar"
-	"github.com/function61/hautomo/pkg/constmetrics"
+	"github.com/function61/gokit/promconstmetrics"
 	"github.com/function61/prompipe/pkg/prompipeclient"
 	"github.com/google/go-github/github"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
+	"strconv"
 	"time"
 )
 
 type Config struct {
+	GitHubUser         string
 	GitHubOrganization string
 	PromPipeEndpoint   string
 	PromPipeAuthToken  string
 }
 
-func gitHubStatsToPrompipe(ctx context.Context) error {
+func pushToPromPipe(
+	ctx context.Context,
+	allMetrics *prometheus.Registry,
+	conf Config,
+) error {
+	return prompipeclient.New(conf.PromPipeEndpoint, conf.PromPipeAuthToken).Send(ctx, allMetrics)
+}
+
+func printResults(
+	ctx context.Context,
+	allMetrics *prometheus.Registry,
+	conf Config,
+) error {
+	expositionOutput := &bytes.Buffer{}
+
+	if err := prompipeclient.GatherToTextExport(allMetrics, expositionOutput); err != nil {
+		return err
+	}
+
+	fmt.Println(expositionOutput.String())
+
+	return nil
+}
+
+func fetchGitHubStats(
+	ctx context.Context,
+	resultHandler func(context.Context, *prometheus.Registry, Config) error,
+) error {
 	conf, err := getConfig()
 	if err != nil {
 		return err
 	}
 
-	client := github.NewClient(nil)
+	githubClient := github.NewClient(nil)
 
-	constMetrics := constmetrics.NewCollector()
+	gitHubMetrics := promconstmetrics.NewCollector()
 
 	allMetrics := prometheus.NewRegistry()
-	if err := allMetrics.Register(constMetrics); err != nil {
+	if err := allMetrics.Register(gitHubMetrics); err != nil {
 		return err
 	}
 
-	opt := &github.RepositoryListByOrgOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
+	if conf.GitHubOrganization != "" {
+		page := 0
+
+		for {
+			repos, resp, err := githubClient.Repositories.ListByOrg(ctx, conf.GitHubOrganization, &github.RepositoryListByOrgOptions{
+				ListOptions: github.ListOptions{Page: page, PerPage: 100},
+			})
+			if err != nil {
+				return err
+			}
+
+			timeOfFetch := time.Now()
+
+			for _, repo := range repos {
+				pushRepoStats(repo, timeOfFetch, gitHubMetrics, conf.GitHubOrganization)
+			}
+
+			if resp.NextPage == 0 {
+				break
+			}
+
+			page = resp.NextPage
+		}
 	}
 
-	for {
-		repos, resp, err := client.Repositories.ListByOrg(ctx, conf.GitHubOrganization, opt)
-		if err != nil {
-			return err
-		}
+	if conf.GitHubUser != "" {
+		page := 0
 
-		ts := time.Now()
+		for {
+			repos, resp, err := githubClient.Repositories.List(ctx, conf.GitHubUser, &github.RepositoryListOptions{
+				ListOptions: github.ListOptions{Page: page, PerPage: 100},
+			})
+			if err != nil {
+				return err
+			}
 
-		for _, repo := range repos {
-			pushRepoStats(repo, ts, constMetrics)
-		}
+			timeOfFetch := time.Now()
 
-		if resp.NextPage == 0 {
-			break
+			for _, repo := range repos {
+				pushRepoStats(repo, timeOfFetch, gitHubMetrics, conf.GitHubUser)
+			}
+
+			if resp.NextPage == 0 {
+				break
+			}
+
+			page = resp.NextPage
 		}
-		opt.Page = resp.NextPage
 	}
 
-	ppc := prompipeclient.New(conf.PromPipeEndpoint, conf.PromPipeAuthToken)
-
-	if err := ppc.Send(ctx, allMetrics); err != nil {
-		return err
-	}
-
-	/*
-		expositionOutput := &bytes.Buffer{}
-
-		if err := prompipeclient.GatherToTextExport(allMetrics, expositionOutput); err != nil {
-			return err
-		}
-
-		fmt.Println(expositionOutput.String())
-	*/
-
-	return nil
+	return resultHandler(ctx, allMetrics, *conf)
 }
 
-func pushRepoStats(repo *github.Repository, ts time.Time, metrics *constmetrics.Collector) {
+func pushRepoStats(
+	repo *github.Repository,
+	ts time.Time,
+	gitHubMetrics *promconstmetrics.Collector,
+	owner string,
+) {
 	push := func(key string, val float64) {
-		// metrics.Observe(metrics.Register(key, "", "id", strconv.Itoa(int(*repo.ID)), "repo", *repo.Name), val, ts)
-		metrics.Observe(metrics.Register(key, "", "repo", *repo.Name), val, ts)
+		gitHubMetrics.Observe(gitHubMetrics.Register(key, "", prometheus.Labels{
+			"id":    strconv.Itoa(int(*repo.ID)),
+			"repo":  *repo.Name,
+			"owner": owner,
+		}), val, ts)
 	}
 
 	push("github_stars", float64(*repo.StargazersCount))
@@ -90,12 +142,12 @@ func pushRepoStats(repo *github.Repository, ts time.Time, metrics *constmetrics.
 
 // this handler is driven by Cloudwatch scheduled event
 func lambdaHandler(ctx context.Context, req events.CloudWatchEvent) error {
-	return gitHubStatsToPrompipe(ctx)
+	return fetchGitHubStats(ctx, pushToPromPipe)
 }
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "dev" {
-		if err := gitHubStatsToPrompipe(context.Background()); err != nil {
+		if err := fetchGitHubStats(context.Background(), printResults); err != nil {
 			panic(err)
 		}
 		return
@@ -115,9 +167,16 @@ func getConfig() (*Config, error) {
 		return val
 	}
 
-	return &Config{
-		GitHubOrganization: getRequiredEnv("GITHUB_ORG"),
+	cfg := &Config{
+		GitHubOrganization: os.Getenv("GITHUB_ORG"),
+		GitHubUser:         os.Getenv("GITHUB_USER"),
 		PromPipeEndpoint:   getRequiredEnv("PROMPIPE_ENDPOINT"),
 		PromPipeAuthToken:  getRequiredEnv("PROMPIPE_AUTHTOKEN"),
-	}, validationError
+	}
+
+	if cfg.GitHubOrganization == "" && cfg.GitHubUser == "" {
+		return nil, errors.New("GITHUB_ORG and GITHUB_USER both cannot be empty")
+	}
+
+	return cfg, validationError
 }
