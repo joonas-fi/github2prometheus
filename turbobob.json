@@ -5,7 +5,7 @@
 	"builders": [
 		{
 			"name": "default",
-			"uses": "docker://fn61/buildkit-golang:20200101_1326_bf030ba8",
+			"uses": "docker://fn61/buildkit-golang:20200122_0942_d0899eff",
 			"mount_source": "",
 			"mount_destination": "/go/src/github.com/joonas-fi/github2prometheus",
 			"workdir": "/go/src/github.com/joonas-fi/github2prometheus",
