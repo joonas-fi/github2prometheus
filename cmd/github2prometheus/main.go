@@ -43,9 +43,8 @@ func printResults(
 		return err
 	}
 
-	fmt.Println(expositionOutput.String())
-
-	return nil
+	_, err := fmt.Println(expositionOutput.String())
+	return err
 }
 
 func fetchGitHubStats(
