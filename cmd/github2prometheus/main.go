@@ -5,64 +5,91 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/function61/gokit/envvar"
+	"github.com/function61/gokit/aws/lambdautils"
+	"github.com/function61/gokit/httputils"
+	"github.com/function61/gokit/logex"
+	"github.com/function61/gokit/ossignal"
 	"github.com/function61/gokit/promconstmetrics"
+	"github.com/function61/gokit/taskrunner"
 	"github.com/function61/prompipe/pkg/prompipeclient"
 	"github.com/google/go-github/github"
 	"github.com/prometheus/client_golang/prometheus"
+	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
 )
 
+const (
+	promContentType = "text/plain; version=0.0.4; charset=utf-8"
+)
+
 type Config struct {
 	GitHubUser         string
 	GitHubOrganization string
-	PromPipeEndpoint   string
-	PromPipeAuthToken  string
 }
 
-func pushToPromPipe(
-	ctx context.Context,
-	allMetrics *prometheus.Registry,
-	conf Config,
-) error {
-	return prompipeclient.New(conf.PromPipeEndpoint, conf.PromPipeAuthToken).Send(ctx, allMetrics)
-}
+func main() {
+	handler, err := newServerHandler()
+	exitIfError(err)
 
-func printResults(
-	ctx context.Context,
-	allMetrics *prometheus.Registry,
-	conf Config,
-) error {
-	expositionOutput := &bytes.Buffer{}
-
-	if err := prompipeclient.GatherToTextExport(allMetrics, expositionOutput); err != nil {
-		return err
+	if lambdautils.InLambda() {
+		lambda.StartHandler(lambdautils.NewLambdaHttpHandlerAdapter(handler))
+		return
 	}
 
-	_, err := fmt.Println(expositionOutput.String())
-	return err
+	logger := logex.StandardLogger()
+
+	exitIfError(runStandaloneServer(
+		ossignal.InterruptOrTerminateBackgroundCtx(logger),
+		handler,
+		logger))
 }
 
-func fetchGitHubStats(
-	ctx context.Context,
-	resultHandler func(context.Context, *prometheus.Registry, Config) error,
-) error {
+func newServerHandler() (http.Handler, error) {
+	mux := http.NewServeMux()
+
 	conf, err := getConfig()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	githubClient := github.NewClient(nil)
 
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		gitHubMetricsReg, err := fetchGitHubMetrics(r.Context(), conf, githubClient)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		expositionOutput := &bytes.Buffer{}
+
+		if err := prompipeclient.GatherToTextExport(gitHubMetricsReg, expositionOutput); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", promContentType)
+
+		fmt.Fprintln(w, expositionOutput.String())
+	})
+
+	return mux, nil
+}
+
+func fetchGitHubMetrics(
+	ctx context.Context,
+	conf *Config,
+	githubClient *github.Client,
+) (*prometheus.Registry, error) {
 	gitHubMetrics := promconstmetrics.NewCollector()
 
-	allMetrics := prometheus.NewRegistry()
-	if err := allMetrics.Register(gitHubMetrics); err != nil {
-		return err
+	gitHubMetricsReg := prometheus.NewRegistry()
+	if err := gitHubMetricsReg.Register(gitHubMetrics); err != nil {
+		return nil, err
 	}
 
 	if conf.GitHubOrganization != "" {
@@ -73,7 +100,7 @@ func fetchGitHubStats(
 				ListOptions: github.ListOptions{Page: page, PerPage: 100},
 			})
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			timeOfFetch := time.Now()
@@ -98,7 +125,7 @@ func fetchGitHubStats(
 				ListOptions: github.ListOptions{Page: page, PerPage: 100},
 			})
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			timeOfFetch := time.Now()
@@ -115,7 +142,7 @@ func fetchGitHubStats(
 		}
 	}
 
-	return resultHandler(ctx, allMetrics, *conf)
+	return gitHubMetricsReg, nil
 }
 
 func pushRepoStats(
@@ -139,43 +166,39 @@ func pushRepoStats(
 	push("github_issues_open", float64(*repo.OpenIssuesCount))
 }
 
-// this handler is driven by Cloudwatch scheduled event
-func lambdaHandler(ctx context.Context, req events.CloudWatchEvent) error {
-	return fetchGitHubStats(ctx, pushToPromPipe)
-}
-
-func main() {
-	if len(os.Args) == 2 && os.Args[1] == "dev" {
-		if err := fetchGitHubStats(context.Background(), printResults); err != nil {
-			panic(err)
-		}
-		return
+func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.Logger) error {
+	srv := &http.Server{
+		Addr:    ":80",
+		Handler: handler,
 	}
 
-	lambda.Start(lambdaHandler)
+	tasks := taskrunner.New(ctx, logger)
+
+	tasks.Start("listener "+srv.Addr, func(_ context.Context, _ string) error {
+		return httputils.RemoveGracefulServerClosedError(srv.ListenAndServe())
+	})
+
+	tasks.Start("listenershutdowner", httputils.ServerShutdownTask(srv))
+
+	return tasks.Wait()
 }
 
 func getConfig() (*Config, error) {
-	var validationError error
-	getRequiredEnv := func(key string) string {
-		val, err := envvar.Get(key)
-		if err != nil {
-			validationError = err
-		}
-
-		return val
-	}
-
 	cfg := &Config{
 		GitHubOrganization: os.Getenv("GITHUB_ORG"),
 		GitHubUser:         os.Getenv("GITHUB_USER"),
-		PromPipeEndpoint:   getRequiredEnv("PROMPIPE_ENDPOINT"),
-		PromPipeAuthToken:  getRequiredEnv("PROMPIPE_AUTHTOKEN"),
 	}
 
 	if cfg.GitHubOrganization == "" && cfg.GitHubUser == "" {
 		return nil, errors.New("GITHUB_ORG and GITHUB_USER both cannot be empty")
 	}
 
-	return cfg, validationError
+	return cfg, nil
+}
+
+func exitIfError(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
