@@ -37,7 +37,7 @@ func main() {
 	exitIfError(err)
 
 	if lambdautils.InLambda() {
-		lambda.StartHandler(lambdautils.NewLambdaHttpHandlerAdapter(handler))
+		lambda.Start(lambdautils.NewLambdaHttpHandlerAdapter(handler))
 		return
 	}
 
