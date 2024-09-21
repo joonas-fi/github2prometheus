@@ -170,6 +170,8 @@ func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.
 	srv := &http.Server{
 		Addr:    ":80",
 		Handler: handler,
+
+		ReadHeaderTimeout: 60 * time.Second,
 	}
 
 	tasks := taskrunner.New(ctx, logger)
