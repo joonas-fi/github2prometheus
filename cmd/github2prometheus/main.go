@@ -5,6 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/function61/gokit/aws/lambdautils"
 	"github.com/function61/gokit/httputils"
@@ -15,11 +21,6 @@ import (
 	"github.com/function61/prompipe/pkg/prompipeclient"
 	"github.com/google/go-github/github"
 	"github.com/prometheus/client_golang/prometheus"
-	"log"
-	"net/http"
-	"os"
-	"strconv"
-	"time"
 )
 
 const (
